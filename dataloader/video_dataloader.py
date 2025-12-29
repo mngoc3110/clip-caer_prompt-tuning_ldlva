@@ -149,12 +149,35 @@ class VideoDataset(data.Dataset):
 
     def get(self, record, indices):
         video_frames_path = glob.glob(os.path.join(record.path, '*'))
-        video_frames_path.sort()  
+        video_frames_path.sort()
+        
+        # --- Safety Check Added ---
+        if len(video_frames_path) == 0:
+            print(f"Warning: No frames found for video {record.path}. Skipping or handling error.")
+            # Option: Return zero tensors or handle gracefully. 
+            # For now, let's create a dummy black image to avoid crashing, 
+            # or better, raise a more informative error so user knows data is bad.
+            # But to keep training running, let's try to reload a random sample or similar.
+            # Here, we will just replicate the logic but with a safe check for p.
+            # If absolutely empty, we can't do much. Let's assume data integrity is mostly ok 
+            # but maybe index p is slightly off.
+            # If really empty, raise error:
+            raise RuntimeError(f"Video folder is empty: {record.path}")
+
+        num_frames_real = len(video_frames_path)
+        
         random_num = random.random()
         images = list()
         images_face = list()
         for seg_ind in indices:
             p = int(seg_ind)
+            
+            # --- Index Clamping ---
+            if p >= num_frames_real:
+                p = num_frames_real - 1
+            if p < 0: 
+                p = 0
+                
             for i in range(self.duration):
                 img_path = os.path.join(video_frames_path[p])
                 parent_dir = os.path.dirname(img_path)
