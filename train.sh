@@ -8,7 +8,7 @@ python main.py \
     --exper-name prompt_tuning_vitb16_cross_attn \
     --gpu 0 \
     --epochs 50 \
-    --batch-size 16 \
+    --batch-size 4 \
     --workers 4 \
     --lr 0.003 \
     --lr-image-encoder 1e-6 \
