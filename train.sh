@@ -13,7 +13,7 @@ python main.py \
     --workers 4 \
     --gradient-accumulation-steps 2 \
     --use-amp True \
-    --lr 0.003 \
+    --lr 0.0003 \
     --lr-image-encoder 1e-6 \
     --lr-prompt-learner 0.001 \
     --weight-decay 0.0001 \
