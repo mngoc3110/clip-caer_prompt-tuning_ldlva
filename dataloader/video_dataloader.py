@@ -30,7 +30,7 @@ class VideoRecord(object):
         return int(self._data[2])
 
 class VideoDataset(data.Dataset):
-    def __init__(self, list_file, num_segments, duration, mode, transform, image_size, bounding_box_face, bounding_box_body, root_dir):
+    def __init__(self, list_file, num_segments, duration, mode, transform, image_size, bounding_box_face, bounding_box_body, root_dir, data_percentage: float = 1.0):
         self.list_file = list_file
         self.duration = duration
         self.num_segments = num_segments
@@ -40,8 +40,17 @@ class VideoDataset(data.Dataset):
         self.bounding_box_face = bounding_box_face
         self.bounding_box_body = bounding_box_body
         self.root_dir = root_dir  # Store root_dir
+        self.data_percentage = data_percentage # Store data_percentage
         self._read_sample()
         self._parse_list()
+        
+        # Sample a percentage of the data if data_percentage < 1.0
+        if self.data_percentage < 1.0:
+            original_len = len(self.video_list)
+            num_samples_to_use = int(original_len * self.data_percentage)
+            self.video_list = random.sample(self.video_list, num_samples_to_use)
+            print(f"Using {self.data_percentage*100:.2f}% of data: {num_samples_to_use}/{original_len} samples.")
+        
         self._read_boxs()
         self._read_body_boxes()
 
@@ -248,7 +257,7 @@ def collate_fn_ignore_none(batch):
         return torch.tensor([]) # Return empty tensor to signal empty batch
     return torch.utils.data.dataloader.default_collate(batch)
 
-def train_data_loader(list_file, num_segments, duration, image_size,dataset_name,bounding_box_face,bounding_box_body, root_dir):
+def train_data_loader(list_file, num_segments, duration, image_size,dataset_name,bounding_box_face,bounding_box_body, root_dir, data_percentage: float = 1.0):
     if dataset_name == "RAER":
          train_transforms = torchvision.transforms.Compose([
             GroupTransform(torchvision.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05)),
@@ -267,12 +276,13 @@ def train_data_loader(list_file, num_segments, duration, image_size,dataset_name
                               image_size=image_size,
                               bounding_box_face=bounding_box_face,
                               bounding_box_body=bounding_box_body,
-                              root_dir=root_dir
+                              root_dir=root_dir,
+                              data_percentage=data_percentage
                               )
     return train_data, collate_fn_ignore_none
 
 
-def test_data_loader(list_file, num_segments, duration, image_size,bounding_box_face,bounding_box_body, root_dir):
+def test_data_loader(list_file, num_segments, duration, image_size,bounding_box_face,bounding_box_body, root_dir, data_percentage: float = 1.0):
     
     test_transform = torchvision.transforms.Compose([GroupResize(image_size),
                                                      Stack(),
@@ -286,6 +296,7 @@ def test_data_loader(list_file, num_segments, duration, image_size,bounding_box_
                              image_size=image_size,
                              bounding_box_face=bounding_box_face,
                              bounding_box_body=bounding_box_body,
-                             root_dir=root_dir
+                             root_dir=root_dir,
+                             data_percentage=data_percentage
                              )
     return test_data, collate_fn_ignore_none

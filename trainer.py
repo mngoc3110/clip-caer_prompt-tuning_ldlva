@@ -25,7 +25,7 @@ class Trainer:
         # Initialize GradScaler for AMP, only for CUDA devices
         # enabled flag handles both use_amp and device type check
         is_cuda = self.device.type == 'cuda'
-        self.scaler = torch.cuda.amp.GradScaler(enabled=(self.use_amp and is_cuda))
+        self.scaler = torch.amp.GradScaler('cuda', enabled=(self.use_amp and is_cuda))
         
         if self.use_amp and not is_cuda:
             print("AMP is enabled but device is not CUDA. GradScaler will be disabled. Autocast will proceed on MPS/CPU.")

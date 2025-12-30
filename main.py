@@ -56,6 +56,7 @@ path_group.add_argument('--test-annotation', type=str, default='RAER/test.txt', 
 path_group.add_argument('--clip-path', type=str, default='/media/D/zlm/code/single_four/models/ViT-B-32.pt', help='Path to the pretrained CLIP model.')
 path_group.add_argument('--bounding-box-face', type=str, default='/media/F/FERDataset/AER-DB/RAER/bounding_box/face_abs.json')
 path_group.add_argument('--bounding-box-body', type=str, default="/media/F/FERDataset/AER-DB/RAER/bounding_box/body_abs.json")
+path_group.add_argument('--data-percentage', type=float, default=1.0, help='Percentage of the dataset to use for training and validation (e.g., 0.1 for 10%).')
 
 # --- Training Control ---
 train_group = parser.add_argument_group('Training Control', 'Parameters to control the training process')

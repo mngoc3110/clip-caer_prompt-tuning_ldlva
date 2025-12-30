@@ -9,9 +9,9 @@ python main.py \
     --exper-name prompt_tuning_vitb16_cross_attn \
     --gpu 0 \
     --epochs 50 \
-    --batch-size 8 \
+    --batch-size 2 \
     --workers 4 \
-    --gradient-accumulation-steps 1 \
+    --gradient-accumulation-steps 4 \
     --use-amp True \
     --lr 0.003 \
     --lr-image-encoder 1e-6 \
