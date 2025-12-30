@@ -198,11 +198,16 @@ def run_training(args: argparse.Namespace) -> None:
             # Add epsilon to avoid division by zero
             class_weights = total_samples / (num_classes * (class_counts + 1e-6))
             
+            # Clip weights to prevent instability
+            max_weight = 10.0
+            print(f"   Clipping class weights to a maximum of {max_weight}")
+            class_weights = np.clip(class_weights, a_min=None, a_max=max_weight)
+
             # Pass to args so build_criterion picks it up
             args.class_weights = class_weights.tolist()
             
             print(f"   Class Counts: {class_counts}")
-            print(f"   Computed Class Weights: {np.round(class_weights, 4)}")
+            print(f"   Computed (and Clipped) Class Weights: {np.round(class_weights, 4)}")
             print("   (These weights will be used in the Loss function to penalize errors on minority classes more heavily)")
             
         except Exception as e:
