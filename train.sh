@@ -4,9 +4,9 @@ set -e
 python main.py \
   --mode train \
   --exper-name m2max_prompttuning_vitb32_wrs_effbs8 \
-  --gpu mps \
+  --gpu 0 \
   --epochs 50 \
-  --batch-size 8 \
+  --batch-size 16 \
   --workers 4 \
   --gradient-accumulation-steps 1 \
   --use-amp True \
