@@ -1,129 +1,223 @@
-# builders.py
-
-import argparse
-from typing import Tuple
+# utils/builders.py
 import os
+import argparse
+from typing import Tuple, Any, Dict
+
+import inspect
 import torch
 import torch.utils.data
 from clip import clip
 
 from dataloader.video_dataloader import train_data_loader, test_data_loader
 from models.Generate_Model import GenerateModel
-from models.Text import *
-from utils.utils import *
 
-
-def build_model(args: argparse.Namespace, input_text: list) -> torch.nn.Module:
-    print("Loading pretrained CLIP model...")
-    # clip.load expects model name (e.g., "ViT-B/16") or a path to a .pt file.
-    # If args.clip_path contains a slash, it's treated as a model name.
-    # Otherwise, it's treated as a local path to a .pt file.
-    if '/' in args.clip_path: # e.g., "ViT-B/16"
-        CLIP_model, _ = clip.load(args.clip_path, device='cpu')
-    else: # e.g., "models/ViT-B-16.pt" or "path/to/ViT-B-32.pt"
-        # Assuming args.clip_path is a local path to the actual .pt file
-        # We need to construct the full path if root_dir is used for clip_path
-        # However, CLIP expects direct model names for its default loading.
-        # If it's a local file, it should be passed directly to clip.load
-        # The user's original train.sh had ViT-B/32, which is a model name.
-        # If it's a full path to a downloaded .pt file, clip.load might handle it.
-        # For now, let's assume it's a model name like ViT-B/16.
-        # If args.clip_path is a local file, it usually looks like "ViT-B-32.pt" in the models/clip folder.
-        # The build_model function should handle the loading of the CLIP model from the path provided
-        # or from its identifier. Let's make sure it handles the case where it's a local file in root_dir.
-        
-        # Checking if it's a model name or a path that needs to be joined with root_dir
-        # A simple check: if it doesn't contain a slash, it might be a local filename.
-        # CLIP's load function typically takes a model name (e.g., "ViT-B/16") or a local path to a .pt file.
-        # The earlier change was `--clip-path ViT-B/16`. This is a model name, not a file path.
-        # If it was a local file, the original path in train.sh was /media/D/zlm/code/single_four/models/ViT-B-32.pt
-        # Let's revert to the assumption that args.clip_path is a model identifier unless proven otherwise.
-        CLIP_model, _ = clip.load(args.clip_path, device='cpu')
-
-
-    print("\nInput Text Prompts:")
-    for text in input_text:
-        print(text)
-
-    print("\nInstantiating GenerateModel...")
-    model = GenerateModel(input_text=input_text, clip_model=CLIP_model, args=args)
-
-    for name, param in model.named_parameters():
-        param.requires_grad = False
-
-    trainable_params_keywords = ["image_encoder", "temporal_net", "prompt_learner", "temporal_net_body", "project_fc"]
-    print('\nTrainable parameters:')
-    for name, param in model.named_parameters():
-        if any(keyword in name for keyword in trainable_params_keywords):
-            param.requires_grad = True
-            print(f"- {name}")
-    print('************************\n')
-
-    return model
+# ✅ alias để tránh recursion
+from models.Text import get_class_info as text_get_class_info
 
 
 def get_class_info(args: argparse.Namespace) -> Tuple[list, list]:
+    return text_get_class_info(args)
+
+
+def build_model(args: argparse.Namespace, input_text: list) -> torch.nn.Module:
+    device = args.device  # torch.device("mps") / "cuda" / "cpu"
+    CLIP_model, _ = clip.load(args.clip_path, device=device, jit=False)
+    # Explicitly convert CLIP model to float32 to avoid MPS datatype issues
+    CLIP_model.float()
+
+    model = GenerateModel(input_text=input_text, clip_model=CLIP_model, args=args)
+
+    # freeze all
+    for _, p in model.named_parameters():
+        p.requires_grad = False
+
+    trainable_keywords = ["image_encoder", "temporal_net", "prompt_learner", "temporal_net_body", "project_fc"]
+    print("\nTrainable parameters:")
+    for name, p in model.named_parameters():
+        if any(k in name for k in trainable_keywords):
+            p.requires_grad = True
+            print(f"- {name}")
+    print("************************\n")
+    return model
+
+
+def _split_dataset_and_collate(retval: Any):
     """
-    根据数据集和文本类型获取 class_names 和 input_text（用于生成 CLIP 模型文本输入）。
-
-    Returns:
-        class_names: 类别名称，用于混淆矩阵等
-        input_text: 输入文本，用于传入模型
+    normalize return of loader:
+      - dataset
+      - (dataset, collate_fn)
     """
-    if args.dataset == "RAER":
-        class_names = ['Neutrality', 'Enjoyment', 'Confusion', 'Fatigue', 'Distraction.']
-        class_names_with_context = class_names_with_context_5
-        class_descriptor = class_descriptor_5
-    else:
-        raise NotImplementedError(f"Dataset '{args.dataset}' is not implemented yet.")
-
-    if args.text_type == "class_names":
-        input_text = class_names
-    elif args.text_type == "class_names_with_context":
-        input_text = class_names_with_context
-    elif args.text_type == "class_descriptor":
-        input_text = class_descriptor
-    else:
-        raise ValueError(f"Unknown text_type: {args.text_type}")
-
-    return class_names, input_text
+    if isinstance(retval, tuple) and len(retval) == 2:
+        return retval[0], retval[1]
+    return retval, None
 
 
+def _filter_kwargs_for_fn(fn, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Keep only kwargs that appear in fn signature.
+    This prevents: unexpected keyword argument 'data_percentage' etc.
+    """
+    sig = inspect.signature(fn)
+    accepted = set(sig.parameters.keys())
+    return {k: v for k, v in kwargs.items() if k in accepted}
 
-def build_dataloaders(args: argparse.Namespace) -> Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]: 
-    train_annotation_file_path = os.path.join(args.root_dir, args.train_annotation)
-    test_annotation_file_path = os.path.join(args.root_dir, args.test_annotation)
-    
-    # Correctly join root_dir with bounding box paths
-    bounding_box_face_path = os.path.join(args.root_dir, args.bounding_box_face)
-    bounding_box_body_path = os.path.join(args.root_dir, args.bounding_box_body)
 
-    print("Loading train data...")
-    train_data, train_collate_fn = train_data_loader(
-        list_file=train_annotation_file_path, num_segments=args.num_segments,
-        duration=args.duration, image_size=args.image_size,dataset_name=args.dataset,
-        bounding_box_face=bounding_box_face_path,bounding_box_body=bounding_box_body_path,
-        root_dir=args.root_dir, data_percentage=args.data_percentage
+def _call_loader(fn, **kwargs):
+    safe_kwargs = _filter_kwargs_for_fn(fn, kwargs)
+    return fn(**safe_kwargs)
+
+
+def build_dataloaders(args: argparse.Namespace):
+    project_root = os.getcwd()
+
+    # root_dir: allow relative or absolute
+    root_dir = getattr(args, "root_dir", ".")
+    root_dir_full = root_dir if os.path.isabs(root_dir) else os.path.join(project_root, root_dir)
+
+    # annotation files: allow relative or absolute
+    train_ann = args.train_annotation
+    val_ann   = getattr(args, "val_annotation", "")
+    test_ann  = args.test_annotation
+
+    if not os.path.isabs(train_ann):
+        train_ann = os.path.join(project_root, train_ann)
+    if val_ann and (not os.path.isabs(val_ann)):
+        val_ann = os.path.join(project_root, val_ann)
+    if not os.path.isabs(test_ann):
+        test_ann = os.path.join(project_root, test_ann)
+
+    # bbox files: allow relative or absolute
+    bbox_face = getattr(args, "bounding_box_face", "")
+    bbox_body = getattr(args, "bounding_box_body", "")
+
+    if bbox_face and (not os.path.isabs(bbox_face)):
+        bbox_face = os.path.join(project_root, bbox_face)
+    if bbox_body and (not os.path.isabs(bbox_body)):
+        bbox_body = os.path.join(project_root, bbox_body)
+
+    # optional
+    data_percentage = float(getattr(args, "data_percentage", 1.0))
+
+    # ---------- TRAIN ----------
+    train_ret = _call_loader(
+        train_data_loader,
+        list_file=train_ann,
+        num_segments=args.num_segments,
+        duration=args.duration,
+        image_size=args.image_size,
+        dataset_name=args.dataset,
+        bounding_box_face=bbox_face,
+        bounding_box_body=bbox_body,
+        root_dir=root_dir_full,
+        data_percentage=data_percentage,   # ✅ will be auto-dropped if not supported
     )
-    
-    print("Loading test data...")
-    test_data, test_collate_fn = test_data_loader(
-        list_file=test_annotation_file_path, num_segments=args.num_segments,
-        duration=args.duration, image_size=args.image_size,
-        bounding_box_face=bounding_box_face_path,bounding_box_body=bounding_box_body_path,
-        root_dir=args.root_dir, data_percentage=args.data_percentage
-    )
+    train_data, train_collate_fn = _split_dataset_and_collate(train_ret)
 
-    print("Creating DataLoader instances...")
+    # ---------- VAL ----------
+    val_list_file = val_ann if val_ann else test_ann
+    val_ret = _call_loader(
+        test_data_loader,
+        list_file=val_list_file,
+        num_segments=args.num_segments,
+        duration=args.duration,
+        image_size=args.image_size,
+        bounding_box_face=bbox_face,
+        bounding_box_body=bbox_body,
+        root_dir=root_dir_full,
+        data_percentage=data_percentage,   # ✅ will be auto-dropped if not supported
+    )
+    val_data, val_collate_fn = _split_dataset_and_collate(val_ret)
+
+    # ---------- TEST ----------
+    test_ret = _call_loader(
+        test_data_loader,
+        list_file=test_ann,
+        num_segments=args.num_segments,
+        duration=args.duration,
+        image_size=args.image_size,
+        bounding_box_face=bbox_face,
+        bounding_box_body=bbox_body,
+        root_dir=root_dir_full,
+        data_percentage=data_percentage,   # ✅ will be auto-dropped if not supported
+    )
+    test_data, test_collate_fn = _split_dataset_and_collate(test_ret)
+
+
+        # ---------- Split stats ----------
+    class_names, _ = get_class_info(args)
+    num_classes = len(class_names)
+
+    if hasattr(train_data, "class_counts"):
+        train_counts = train_data.class_counts(num_classes=num_classes, normalize=True)
+        val_counts   = val_data.class_counts(num_classes=num_classes, normalize=True)
+        test_counts  = test_data.class_counts(num_classes=num_classes, normalize=True)
+
+        print("Train counts:", train_counts.tolist())
+        print("Val counts:",   val_counts.tolist())
+        print("Test counts:",  test_counts.tolist())
+
+        if min(val_counts.tolist()) < 3:
+            print(f"⚠️ WARNING: Val has very few samples in some class: {val_counts.tolist()}")
+    else:
+        print("⚠️ Dataset has no class_counts(). Please add it to VideoDataset.")
+
+    # ---------- WeightedRandomSampler (optional) ----------
+    use_wrs = str(getattr(args, "use_weighted_sampler", "False")) == "True"
+    sampler = None
+    if use_wrs:
+        if hasattr(train_data, "get_labels"):
+            labels_for_sampler = train_data.get_labels(normalize=True)
+        else:
+            labels_for_sampler = [int(r.label) - 1 for r in train_data.video_list]
+
+        import numpy as np
+        labels_np = np.asarray(labels_for_sampler, dtype=np.int64)
+        counts = np.bincount(labels_np, minlength=num_classes).astype(np.float32)
+        counts[counts == 0] = 1.0
+
+        class_weights = counts.sum() / counts
+        class_weights = class_weights / class_weights.mean()
+        max_w = float(getattr(args, "max_class_weight", 10.0))
+        class_weights = np.clip(class_weights, 0.0, max_w)
+
+        sample_weights = torch.as_tensor(class_weights[labels_np], dtype=torch.double)
+        sampler = torch.utils.data.WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True
+        )
+        print(f"=> Using WeightedRandomSampler | counts={counts.astype(int).tolist()} | class_w={np.round(class_weights, 3).tolist()}")
+
+    # ---------- DataLoaders ----------
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=args.batch_size, shuffle=True,
-        num_workers=args.workers, pin_memory=True, drop_last=True,
+        train_data,
+        batch_size=args.batch_size,
+        sampler=sampler,      # <-- dùng sampler
+        shuffle=False,        # <-- MUST be False
+        num_workers=args.workers,
+        pin_memory=True,
+        drop_last=True,
         collate_fn=train_collate_fn
     )
+
     val_loader = torch.utils.data.DataLoader(
-        test_data, batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True,
+        val_data,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.workers,
+        pin_memory=True,
+        collate_fn=val_collate_fn
+    )
+
+    test_loader = torch.utils.data.DataLoader(
+        test_data,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.workers,
+        pin_memory=True,
         collate_fn=test_collate_fn
     )
+
     
-    return train_loader, val_loader
+    
+    return train_loader, val_loader, test_loader
