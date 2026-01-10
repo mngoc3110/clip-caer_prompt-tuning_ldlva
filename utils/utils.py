@@ -51,6 +51,8 @@ class ProgressMeter(object):
 
         print(msg)
         if self.log_txt_path is not None:
+      
+            os.makedirs(os.path.dirname(self.log_txt_path), exist_ok=True)
             with open(self.log_txt_path, "a", encoding="utf-8") as f:
                 f.write(msg + "\n")
 
