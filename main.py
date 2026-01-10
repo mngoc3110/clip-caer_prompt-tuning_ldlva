@@ -274,7 +274,7 @@ def run_training(args: argparse.Namespace) -> None:
         use_amp=(args.use_amp == 'True'),
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         log_txt_path=log_txt_path,
-        class_names=class_names
+        
     )
 
     # ------------------------------------------------------------
