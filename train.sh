@@ -33,8 +33,8 @@ python main.py \
   --data-percentage 1.0 \
   \
   --clip-path ViT-B/32 \
-  --bounding-box-face RAER/bounding_box/face.json \
-  --bounding-box-body RAER/bounding_box/body.json \
+  --bounding-box-face /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/face.json \
+  --bounding-box-body /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/body.json \
   \
   --text-type class_descriptor \
   --contexts-number 12 \
