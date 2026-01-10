@@ -59,9 +59,12 @@ class GenerateModel(nn.Module):
 
         # --- Hand-crafted token embedding (frozen) ---
         with torch.no_grad():
-            embedding = clip_model.token_embedding(
-                self.tokenized_hand_crafted_prompts
-            ).type(clip_model.dtype)
+            tokenized_prompts = tokenized_prompts.to(clip_model.token_embedding.weight.device)
+
+            # MPS ổn định nhất dùng float32
+            dtype = torch.float32 if clip_model.token_embedding.weight.device.type == "mps" else clip_model.dtype
+
+            embedding = clip_model.token_embedding(tokenized_prompts).type(dtype)
         self.register_buffer("hand_crafted_embedding", embedding)
 
         # Fuse face+body -> instead of simple concat, we use Cross Attention
@@ -102,7 +105,7 @@ class GenerateModel(nn.Module):
         self.logit_scale = clip_model.logit_scale
 
         # Optional: fixed temperature override (if args.tau is set)
-        self.tau = float(getattr(args, "tau", 0.0))  
+        self.tau = 0.5 # float(getattr(args, "tau", 0.0))  # FORCED FOR DEBUGGING  
 
         # ✅ Check if we need the Hand-crafted branch (View 2)
         self.use_handcrafted_branch = (
